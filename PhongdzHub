@@ -25,6 +25,9 @@ local MELEE_LIST = {
 
 --// CACHE REMOTE
 local remoteCache = { registerAttack = nil, registerHit = nil }
+local lastAttackTime = 0
+local ATTACK_COOLDOWN = 0.1 -- 100ms giữa các attack
+local PLAYER_DETECTION_RANGE = 300 -- 300 stud
 
 --// XÓA GIAO DIỆN CŨ
 if game:GetService("CoreGui"):FindFirstChild("PhongdzHub") then
@@ -299,17 +302,22 @@ local function TweenTo(targetCFrame)
     return completed
 end
 
---// CHỈNH SỬA: QUÉT TOÀN MAP (MATH.HUGE) ĐỂ SĂN HẾT PLAYER TRONG PHÒNG TRIAL
+--// ✅ CHỈNH SỬA: Quét người trong phạm vi 300 stud
 local function GetClosestPlayerInTrial()
-    local closest, shortDist = nil, math.huge
+    local closest, shortDist = nil, PLAYER_DETECTION_RANGE
     local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not myRoot then return nil end
+    
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
             local hum = p.Character:FindFirstChildWhichIsA("Humanoid")
             if hum and hum.Health > 0 then
                 local dist = (myRoot.Position - p.Character.HumanoidRootPart.Position).Magnitude
-                if dist < shortDist then shortDist = dist closest = p end
+                -- Chỉ tính người trong phạm vi 300 stud
+                if dist < shortDist then 
+                    shortDist = dist 
+                    closest = p 
+                end
             end
         end
     end
@@ -454,32 +462,40 @@ task.spawn(function()
                     root.CFrame = tRoot.CFrame * CFrame.new(0, 0, 2.2)
                     root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                     
-                    --// ✅ TỐI ƯU: Cache remote thay vì tìm mỗi frame
+                    --// ✅ TỐI ƯU: Cache remote + Giảm spam với cooldown
                     local registerAttack, registerHit = CacheRemotes()
                     
                     if registerAttack and registerHit then
-                        local melee = GetTool(true)
-                        if _G.WeaveFastAttack then
-                            local fruit = GetTool(false)
-                            if fruit and melee then
-                                attackCounter = attackCounter + 1
-                                local currentTool = (attackCounter <= 2) and fruit or melee
-                                if hum.Parent and currentTool.Parent ~= char then hum:EquipTool(currentTool) end
-                                
-                                --// GỬI CẢ 2 REMOTE: Trước là RegisterAttack, sau là RegisterHit
-                                pcall(function() registerAttack:FireServer(0.4000000059604645) end)
-                                pcall(function() registerHit:FireServer(0.4000000059604645) end)
-                                if attackCounter >= 4 then attackCounter = 0 end
-                            elseif melee then
-                                if hum.Parent and melee.Parent ~= char then hum:EquipTool(melee) end
-                                pcall(function() registerAttack:FireServer(0.4000000059604645) end)
-                                pcall(function() registerHit:FireServer(0.4000000059604645) end)
-                            end
-                        else
-                            if melee then
-                                if hum.Parent and melee.Parent ~= char then hum:EquipTool(melee) end
-                                pcall(function() registerAttack:FireServer(0.4000000059604645) end)
-                                pcall(function() registerHit:FireServer(0.4000000059604645) end)
+                        local currentTime = tick()
+                        -- Chỉ gửi nếu đủ cooldown (0.1 giây)
+                        if currentTime - lastAttackTime > ATTACK_COOLDOWN then
+                            local melee = GetTool(true)
+                            if _G.WeaveFastAttack then
+                                local fruit = GetTool(false)
+                                if fruit and melee then
+                                    attackCounter = attackCounter + 1
+                                    local currentTool = (attackCounter <= 2) and fruit or melee
+                                    if hum.Parent and currentTool.Parent ~= char then hum:EquipTool(currentTool) end
+                                    
+                                    --// GỬI CẢ 2 REMOTE: Với cooldown an toàn
+                                    pcall(function() registerAttack:FireServer(0.4000000059604645) end)
+                                    pcall(function() registerHit:FireServer(0.4000000059604645) end)
+                                    lastAttackTime = currentTime
+                                    
+                                    if attackCounter >= 4 then attackCounter = 0 end
+                                elseif melee then
+                                    if hum.Parent and melee.Parent ~= char then hum:EquipTool(melee) end
+                                    pcall(function() registerAttack:FireServer(0.4000000059604645) end)
+                                    pcall(function() registerHit:FireServer(0.4000000059604645) end)
+                                    lastAttackTime = currentTime
+                                end
+                            else
+                                if melee then
+                                    if hum.Parent and melee.Parent ~= char then hum:EquipTool(melee) end
+                                    pcall(function() registerAttack:FireServer(0.4000000059604645) end)
+                                    pcall(function() registerHit:FireServer(0.4000000059604645) end)
+                                    lastAttackTime = currentTime
+                                end
                             end
                         end
                     end
