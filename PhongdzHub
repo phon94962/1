@@ -347,7 +347,7 @@ local function CacheRemotes()
     return remoteCache.registerAttack, remoteCache.registerHit
 end
 
---// ✅ TỐI ƯU: Quét TẤT CẢ rương trong toàn map
+--// ✅ TỐI ƯU: Quét TẤT CẢ rương trong toàn map (FIX CẤUTRÚC CHEST)
 local function GetAllChests()
     local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not myRoot then return {} end
@@ -359,7 +359,8 @@ local function GetAllChests()
         if checkedModels[v] then return end
         checkedModels[v] = true
         
-        if v.Name:find("Chest") and not collectedChests[v] then
+        -- Tìm Chest1, Chest2, Chest3 (không phải folder "Chest")
+        if (v.Name == "Chest1" or v.Name == "Chest2" or v.Name == "Chest3") and not collectedChests[v] then
             local part = v:FindFirstChild("HumanoidRootPart") or v:FindFirstChild("RootPart") or (v:IsA("BasePart") and v)
             if part then
                 local dist = (myRoot.Position - part.Position).Magnitude
@@ -368,28 +369,29 @@ local function GetAllChests()
         end
     end
     
-    -- Quét folder Chests trước (ưu tiên)
-    local chestFolder = workspace:FindFirstChild("Chests")
-    if chestFolder then
-        for _, v in pairs(chestFolder:GetChildren()) do checkChest(v) end
-        -- Quét sâu hơn trong folder
-        for _, v in pairs(chestFolder:GetDescendants()) do checkChest(v) end
-    end
-    
-    -- Quét các folder khác
-    for _, fName in pairs({"ChestModels", "ChestSpawns"}) do
-        local f = workspace:FindFirstChild(fName)
-        if f then 
-            for _, v in pairs(f:GetChildren()) do checkChest(v) end
-            for _, v in pairs(f:GetDescendants()) do checkChest(v) end
+    -- Quét ChestModels/Map (chỉ quét Map, bỏ Elements vì đó là quái)
+    local chestModels = workspace:FindFirstChild("ChestModels")
+    if chestModels then
+        local mapFolder = chestModels:FindFirstChild("Map")
+        if mapFolder then
+            -- Quét tất cả descendants để tìm Chest1, Chest2, Chest3
+            for _, v in pairs(mapFolder:GetDescendants()) do
+                checkChest(v)
+            end
         end
     end
     
-    -- Quét workspace (fallback)
-    for _, v in pairs(workspace:GetChildren()) do checkChest(v) end
+    -- Fallback: Quét trực tiếp Chests folder nếu có
+    local chestFolder = workspace:FindFirstChild("Chests")
+    if chestFolder then
+        for _, v in pairs(chestFolder:GetDescendants()) do
+            checkChest(v)
+        end
+    end
     
     -- Sắp xếp theo khoảng cách
     table.sort(chests, function(a, b) return a.distance < b.distance end)
+    
     return chests
 end
 
@@ -525,12 +527,10 @@ task.spawn(function()
             if #allChests > 0 then
                 MaintainHover()
                 -- Quét lần lượt từ gần đến xa
-                local chestProcessed = false
                 for _, chestData in pairs(allChests) do
-                    if _G.AutoChest and not chestProcessed then
+                    if _G.AutoChest then
                         if TweenTo(chestData.part.CFrame * CFrame.new(0, 2, 0)) then 
                             collectedChests[chestData.model] = true 
-                            chestProcessed = true
                             task.wait(0.2) -- Delay trước khi quét cái tiếp theo
                         end
                     end
@@ -545,4 +545,4 @@ task.spawn(function()
             RemoveHover()
         end
     end
-end)
+end())
