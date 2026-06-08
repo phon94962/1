@@ -15,6 +15,7 @@ _G.AutoChest = false
 _G.AutoHop = false
 _G.AutoKillPlayers = false
 _G.WeaveFastAttack = false 
+_G.AutoKillEnemies = false
 
 local collectedChests = setmetatable({}, {__mode = "k"})
 local MELEE_LIST = {
@@ -28,6 +29,7 @@ local remoteCache = { registerAttack = nil, registerHit = nil }
 local lastAttackTime = 0
 local ATTACK_COOLDOWN = 0.1 -- 100ms giữa các attack
 local PLAYER_DETECTION_RANGE = 300 -- 300 stud
+local ENEMY_DETECTION_RANGE = 300 -- 300 stud
 
 --// XÓA GIAO DIỆN CŨ
 if game:GetService("CoreGui"):FindFirstChild("PhongdzHub") then
@@ -211,9 +213,8 @@ local MainTab = CreateTab("Trang Chủ", true)
 AddToggle(MainTab, "Càn Quét Rương Nhanh", function(v) _G.AutoChest = v end)
 AddToggle(MainTab, "Tự Động Đổi Server", function(v) _G.AutoHop = v end)
 
-local V4Tab = CreateTab("Tộc V4", false)
-AddToggle(V4Tab, "OVERCLOCK: Đồ Sát Trial", function(v) _G.AutoKillPlayers = v end)
-AddToggle(V4Tab, "Đan Xen Trái Ác Quỷ & Melee", function(v) _G.WeaveFastAttack = v end)
+local FarmTab = CreateTab("Farm Quái", false)
+AddToggle(FarmTab, "Đánh Quái Dự Phòng", function(v) _G.AutoKillEnemies = v end)
 
 --=============================================================================
 --                         HỆ THỐNG LOGIC VẬN HÀNH
@@ -395,9 +396,50 @@ local function GetAllChests()
     return chests
 end
 
+--// ✅ TỐI ƯU: Lấy tất cả quái trong phạm vi 300 studs
+local function GetAllEnemies()
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return {} end
+    
+    local enemies = {}
+    local checkedModels = setmetatable({}, {__mode = "k"})
+    
+    local function checkEnemy(v)
+        if checkedModels[v] then return end
+        checkedModels[v] = true
+        
+        -- Tìm quái (Model có Humanoid)
+        if v:IsA("Model") and v:FindFirstChildWhichIsA("Humanoid") then
+            local hum = v:FindFirstChildWhichIsA("Humanoid")
+            local part = v:FindFirstChild("HumanoidRootPart") or v:FindFirstChild("RootPart")
+            
+            if part and hum and hum.Health > 0 then
+                local dist = (myRoot.Position - part.Position).Magnitude
+                -- Chỉ lấy quái trong 300 studs
+                if dist <= ENEMY_DETECTION_RANGE then
+                    table.insert(enemies, { part = part, model = v, hum = hum, distance = dist })
+                end
+            end
+        end
+    end
+    
+    -- Quét folder Enemies
+    local enemiesFolder = workspace:FindFirstChild("Enemies")
+    if enemiesFolder then
+        for _, v in pairs(enemiesFolder:GetChildren()) do
+            checkEnemy(v)
+        end
+    end
+    
+    -- Sắp xếp theo khoảng cách
+    table.sort(enemies, function(a, b) return a.distance < b.distance end)
+    
+    return enemies
+end
+
 --// VÒNG LẶP LIÊN TỤC KHÓA NOCLIP XUYÊN TƯỜNG (ANTI-KẸT ĐẢO)
 RunService.Stepped:Connect(function()
-    if _G.AutoChest or _G.AutoKillPlayers then
+    if _G.AutoChest or _G.AutoKillPlayers or _G.AutoKillEnemies then
         local char = LocalPlayer.Character
         if char then
             local root = char:FindFirstChild("HumanoidRootPart")
@@ -545,4 +587,55 @@ task.spawn(function()
             RemoveHover()
         end
     end
-end())
+end)
+
+--=============================================================================
+--    VÒNG LẶP ĐÁNH QUÁI DỰ PHÒNG (KHÔNG DÙNG REMOTE)
+--=============================================================================
+task.spawn(function()
+    while true do
+        task.wait(0.15)
+        if _G.AutoKillEnemies then
+            local allEnemies = GetAllEnemies()
+            
+            if #allEnemies > 0 then
+                local char = LocalPlayer.Character
+                local hum = char and char:FindFirstChildWhichIsA("Humanoid")
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                
+                if char and hum and root and hum.Health > 0 then
+                    MaintainHover()
+                    
+                    -- Gom ~3 quái gần nhất
+                    local targetEnemies = {}
+                    for i = 1, math.min(3, #allEnemies) do
+                        table.insert(targetEnemies, allEnemies[i])
+                    end
+                    
+                    -- Tween tới vị trí giữa các quái và đánh
+                    for _, enemyData in pairs(targetEnemies) do
+                        if _G.AutoKillEnemies and enemyData.hum.Health > 0 then
+                            -- Dịch chuyển tới quái
+                            root.CFrame = enemyData.part.CFrame * CFrame.new(0, 0, 2)
+                            root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                            
+                            -- Đánh quái bằng cách mở rộng hitbox (dự phòng - không remote)
+                            -- Tăng kích thước humanoidRootPart của player để hit quái
+                            local origSize = root.Size
+                            root.Size = Vector3.new(8, 8, 8)
+                            
+                            task.wait(0.2)
+                            
+                            root.Size = origSize
+                            task.wait(0.1)
+                        end
+                    end
+                end
+            else
+                RemoveHover()
+            end
+        else
+            RemoveHover()
+        end
+    end
+end)
