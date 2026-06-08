@@ -18,6 +18,7 @@ _G.WeaveFastAttack = false
 _G.AutoKillEnemies = false
 
 local collectedChests = setmetatable({}, {__mode = "k"})
+local damagedEnemies = setmetatable({}, {__mode = "k"})
 local MELEE_LIST = {
     "Combat", "Dark Step", "Electro", "Water Kung Fu", "Dragon Breath", 
     "Superhuman", "Death Step", "Sharkman Karate", "Electric Claw", 
@@ -27,7 +28,9 @@ local MELEE_LIST = {
 --// CACHE REMOTE
 local remoteCache = { registerAttack = nil, registerHit = nil }
 local lastAttackTime = 0
+local lastEnemyAttackTime = 0
 local ATTACK_COOLDOWN = 0.1 -- 100ms giữa các attack
+local ENEMY_ATTACK_COOLDOWN = 0.15 -- 150ms giữa các đánh quái
 local PLAYER_DETECTION_RANGE = 300 -- 300 stud
 local ENEMY_DETECTION_RANGE = 300 -- 300 stud
 
@@ -590,11 +593,11 @@ task.spawn(function()
 end)
 
 --=============================================================================
---    VÒNG LẶP ĐÁNH QUÁI DỰ PHÒNG (KHÔNG DÙNG REMOTE)
+--    VÒNG LẶP ĐÁNH QUÁI DỰ PHÒNG (BAY TRÊN ĐẦU + FIX SPAM)
 --=============================================================================
 task.spawn(function()
     while true do
-        task.wait(0.15)
+        task.wait(0.2)
         if _G.AutoKillEnemies then
             local allEnemies = GetAllEnemies()
             
@@ -605,6 +608,7 @@ task.spawn(function()
                 
                 if char and hum and root and hum.Health > 0 then
                     MaintainHover()
+                    hum.PlatformStand = true
                     
                     -- Gom ~3 quái gần nhất
                     local targetEnemies = {}
@@ -612,24 +616,33 @@ task.spawn(function()
                         table.insert(targetEnemies, allEnemies[i])
                     end
                     
-                    -- Tween tới vị trí giữa các quái và đánh
+                    -- Tween lên trên đầu quái + đánh
                     for _, enemyData in pairs(targetEnemies) do
                         if _G.AutoKillEnemies and enemyData.hum.Health > 0 then
-                            -- Dịch chuyển tới quái
-                            root.CFrame = enemyData.part.CFrame * CFrame.new(0, 0, 2)
-                            root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                            
-                            -- Đánh quái bằng cách mở rộng hitbox (dự phòng - không remote)
-                            -- Tăng kích thước humanoidRootPart của player để hit quái
-                            local origSize = root.Size
-                            root.Size = Vector3.new(8, 8, 8)
-                            
-                            task.wait(0.2)
-                            
-                            root.Size = origSize
-                            task.wait(0.1)
+                            local currentTime = tick()
+                            -- Kiểm tra cooldown để tránh spam
+                            if currentTime - lastEnemyAttackTime > ENEMY_ATTACK_COOLDOWN then
+                                -- Bay lên trên đầu quái (cao hơn 5 studs)
+                                local targetPos = enemyData.part.CFrame * CFrame.new(0, 5, 0)
+                                root.CFrame = targetPos
+                                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                                
+                                -- Expand hitbox để đánh quái
+                                local origSize = root.Size
+                                root.Size = Vector3.new(8, 8, 8)
+                                
+                                task.wait(0.1)
+                                
+                                root.Size = origSize
+                                lastEnemyAttackTime = currentTime
+                                damagedEnemies[enemyData.model] = true
+                                
+                                task.wait(0.05)
+                            end
                         end
                     end
+                    
+                    hum.PlatformStand = false
                 end
             else
                 RemoveHover()
