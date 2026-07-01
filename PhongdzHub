@@ -597,7 +597,7 @@ end)
 --=============================================================================
 task.spawn(function()
     while true do
-        task.wait(0.2)
+        task.wait(0.05) -- Giảm xuống 50ms cho chạy mượt
         if _G.AutoKillEnemies then
             local allEnemies = GetAllEnemies()
             
@@ -608,7 +608,6 @@ task.spawn(function()
                 
                 if char and hum and root and hum.Health > 0 then
                     MaintainHover()
-                    hum.PlatformStand = true
                     
                     -- Gom ~3 quái gần nhất
                     local targetEnemies = {}
@@ -616,38 +615,52 @@ task.spawn(function()
                         table.insert(targetEnemies, allEnemies[i])
                     end
                     
-                    -- Tween lên trên đầu quái + đánh
+                    -- Lặp qua từng quái
                     for _, enemyData in pairs(targetEnemies) do
-                        if _G.AutoKillEnemies and enemyData.hum.Health > 0 then
+                        if _G.AutoKillEnemies and enemyData.hum and enemyData.hum.Health > 0 then
                             local currentTime = tick()
-                            -- Kiểm tra cooldown để tránh spam
+                            
+                            -- Kiểm tra cooldown
                             if currentTime - lastEnemyAttackTime > ENEMY_ATTACK_COOLDOWN then
+                                -- Đặt PlatformStand khi bay
+                                hum.PlatformStand = true
+                                
                                 -- Bay lên trên đầu quái (cao hơn 5 studs)
                                 local targetPos = enemyData.part.CFrame * CFrame.new(0, 5, 0)
                                 root.CFrame = targetPos
                                 root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                                 
-                                -- Expand hitbox để đánh quái
+                                task.wait(0.08) -- Chờ tween xong
+                                
+                                -- Expand hitbox lớn hơn (10x10x10)
                                 local origSize = root.Size
-                                root.Size = Vector3.new(8, 8, 8)
+                                root.Size = Vector3.new(10, 10, 10)
+                                root.CanCollide = false
                                 
-                                task.wait(0.1)
+                                task.wait(0.15) -- Giữ hitbox lớn để đánh
                                 
+                                -- Shrink lại
                                 root.Size = origSize
+                                root.CanCollide = false
+                                
                                 lastEnemyAttackTime = currentTime
                                 damagedEnemies[enemyData.model] = true
+                                
+                                -- Tắt PlatformStand sau khi xong
+                                hum.PlatformStand = false
                                 
                                 task.wait(0.05)
                             end
                         end
                     end
-                    
-                    hum.PlatformStand = false
                 end
             else
                 RemoveHover()
             end
         else
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildWhichIsA("Humanoid")
+            if hum then hum.PlatformStand = false end
             RemoveHover()
         end
     end
